@@ -70,11 +70,6 @@
         <input id="vat_rate" type="number" step="0.1" name="vat_rate" value="10">
       </div>
 
-      <label class="option-check">
-        <input type="checkbox" name="include_pdf" value="1" checked>
-        엑셀 결과 시트를 업체별 PDF로도 다운로드 (ZIP)
-      </label>
-
       <button id="generate-btn" type="submit" class="generate-btn">
         <span class="btn-label">비교견적 생성</span>
         <span class="btn-loading" hidden>
@@ -218,9 +213,8 @@
 
           const contentType = response.headers.get('Content-Type') || '';
           const isExcel = contentType.includes('spreadsheetml');
-          const isZip = contentType.includes('application/zip');
           const isBinary = contentType.includes('octet-stream');
-          if (!isExcel && !isZip && !isBinary) {
+          if (!isExcel && !isBinary) {
             throw new Error('다운로드 파일이 생성되지 않았습니다.');
           }
 
@@ -237,13 +231,7 @@
           link.remove();
           window.URL.revokeObjectURL(url);
 
-          const isZipFile = downloadName.toLowerCase().endsWith('.zip') || isZip;
-          setStatus(
-            isZipFile
-              ? '생성 완료. 엑셀 결과물과 업체별 PDF ZIP 다운로드를 시작했습니다.'
-              : '생성 완료. 파일 다운로드를 시작했습니다.',
-            'success'
-          );
+          setStatus('생성 완료. 파일 다운로드를 시작했습니다.', 'success');
         } catch (error) {
           setStatus('생성 실패. 입력 엑셀 형식 또는 서버 상태를 확인해 주세요.', 'error');
         } finally {

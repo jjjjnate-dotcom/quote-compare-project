@@ -203,20 +203,6 @@ input[type="number"]:focus,
   gap: 14px;
 }
 
-.option-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 16px;
-  font-size: 14px;
-  color: #24384f;
-}
-
-.option-check input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-}
-
 .generate-btn {
   width: 100%;
   border: 0;

@@ -1,16 +1,13 @@
-﻿import os
+import os
 from pathlib import Path
 import tempfile
-import zipfile
 
-from flask import Flask, render_template, request, send_file, flash, redirect, url_for
-from openpyxl import load_workbook
+from flask import Flask, flash, redirect, render_template, request, send_file, url_for
 from werkzeug.utils import secure_filename
 
-from src.quote_generator import QuoteGenerator, QuoteGenerationError
-from src.pdf_quote_parser import convert_pdf_to_source_workbook, PdfQuoteParseError
-from src.excel_quote_parser import convert_excel_to_source_workbook, ExcelQuoteParseError
-from src.quote_pdf_exporter import export_sheet_to_pdf
+from src.excel_quote_parser import ExcelQuoteParseError, convert_excel_to_source_workbook
+from src.pdf_quote_parser import PdfQuoteParseError, convert_pdf_to_source_workbook
+from src.quote_generator import QuoteGenerationError, QuoteGenerator
 
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATE_PATH = BASE_DIR / "resources" / "comparison_template.xlsx"
@@ -28,7 +25,6 @@ def make_safe_upload_name(original_name: str) -> str:
     safe_name = secure_filename(original_name)
     original_suffix = Path(original_name).suffix.lower()
 
-    # Non-ASCII names can collapse to extensions without a dot via secure_filename.
     if "." not in safe_name:
         if original_suffix in {".xlsx", ".xlsm", ".pdf"}:
             return f"upload{original_suffix}"
@@ -56,7 +52,6 @@ def generate():
 
     company1 = request.form.get("company1", "Company1").strip() or "Company1"
     company2 = request.form.get("company2", "Company2").strip() or "Company2"
-    include_pdf = request.form.get("include_pdf") == "1"
 
     try:
         rate1 = float(request.form.get("rate1", "15"))
@@ -72,7 +67,6 @@ def generate():
         uploaded.save(upload_path)
 
         source_quote_path = tmp_dir / f"{upload_path.stem}_normalized.xlsx"
-
         if upload_path.suffix.lower() == ".pdf":
             source_quote_path = tmp_dir / f"{upload_path.stem}_parsed.xlsx"
             try:
@@ -88,7 +82,6 @@ def generate():
                 return redirect(url_for("index"))
 
         output_path = tmp_dir / f"비교견적_{upload_path.stem}.xlsx"
-
         try:
             generator = QuoteGenerator(TEMPLATE_PATH)
             generator.generate(
@@ -107,34 +100,6 @@ def generate():
             app.logger.exception("Unhandled error while generating quote file")
             flash(f"파일 생성 중 오류가 발생했습니다. 상세: {exc}")
             return redirect(url_for("index"))
-
-        if include_pdf:
-            workbook = load_workbook(output_path, data_only=False)
-            company1_sheet = workbook.sheetnames[1]
-            company2_sheet = workbook.sheetnames[2]
-            company1_pdf = tmp_dir / f"{company1_sheet}_견적서.pdf"
-            company2_pdf = tmp_dir / f"{company2_sheet}_견적서.pdf"
-
-            try:
-                export_sheet_to_pdf(output_path, company1_sheet, company1_pdf)
-                export_sheet_to_pdf(output_path, company2_sheet, company2_pdf)
-            except Exception as exc:
-                app.logger.exception("Unhandled error while generating quote PDF files")
-                flash(f"PDF 생성 중 오류가 발생했습니다. 상세: {exc}")
-                return redirect(url_for("index"))
-
-            zip_path = tmp_dir / f"비교견적_{upload_path.stem}.zip"
-            with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-                zf.write(output_path, arcname=output_path.name)
-                zf.write(company1_pdf, arcname=company1_pdf.name)
-                zf.write(company2_pdf, arcname=company2_pdf.name)
-
-            return send_file(
-                zip_path,
-                as_attachment=True,
-                download_name=zip_path.name,
-                mimetype="application/zip",
-            )
 
         return send_file(
             output_path,
