@@ -7,7 +7,6 @@ import re
 from zipfile import BadZipFile
 
 from openpyxl import Workbook, load_workbook
-from openpyxl.drawing.image import Image as OpenPyxlImage
 from openpyxl.utils.exceptions import InvalidFileException
 
 from .excel_utils import (
@@ -40,8 +39,6 @@ INVALID_SHEET_TITLE_CHARS = re.compile(r"[\\/*?:\[\]]")
 class QuoteGenerator:
     def __init__(self, template_path: Path):
         self.template_path = Path(template_path)
-        self.geoseong_stamp_path = self.template_path.parent / "stamp_geoseong.png"
-        self.haegwang_stamp_path = self.template_path.parent / "stamp_haegwang.png"
         if not self.template_path.exists():
             raise QuoteGenerationError(f"Template file not found: {self.template_path}")
 
@@ -91,8 +88,6 @@ class QuoteGenerator:
 
         self._fill_geoseong_sheet(template_wb[company1_title], source_ws, item_count, company1_rate, vat_rate)
         self._fill_haegwang_sheet(template_wb[company2_title], source_ws, item_count, company2_rate, vat_rate)
-        self._add_stamp_if_available(template_wb[company1_title], self.geoseong_stamp_path, "M4", 78, 78)
-        self._add_stamp_if_available(template_wb[company2_title], self.haegwang_stamp_path, "AB2", 68, 68)
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         template_wb.save(output_path)
@@ -147,18 +142,6 @@ class QuoteGenerator:
         wb.remove(old_ws)
         new_ws = wb.create_sheet(title=SOURCE_SHEET_NAME, index=0)
         copy_sheet_content(source_ws, new_ws)
-
-    @staticmethod
-    def _add_stamp_if_available(ws, image_path: Path, anchor: str, width: int, height: int) -> None:
-        if not image_path.exists():
-            return
-        try:
-            stamp = OpenPyxlImage(str(image_path))
-        except Exception:
-            return
-        stamp.width = width
-        stamp.height = height
-        ws.add_image(stamp, anchor)
 
     def _fill_geoseong_sheet(self, ws, source_ws, item_count: int, rate: float, vat_rate: float) -> None:
         spec = CompareSheetSpec(
