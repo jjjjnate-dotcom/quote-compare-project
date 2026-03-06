@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 
 from openpyxl import Workbook, load_workbook
 
@@ -27,6 +28,9 @@ class CompareSheetSpec:
     template_total_row: int
     style_row: int
     max_col: int
+
+
+INVALID_SHEET_TITLE_CHARS = re.compile(r"[\\/*?:\[\]]")
 
 
 class QuoteGenerator:
@@ -55,17 +59,46 @@ class QuoteGenerator:
 
         self._replace_source_sheet(template_wb, source_ws)
 
+        if len(template_wb.sheetnames) < 3:
+            raise QuoteGenerationError("템플릿 시트 구성이 올바르지 않습니다. 기본 템플릿 파일을 확인해 주세요.")
+
         sheet1_name = template_wb.sheetnames[1]
         sheet2_name = template_wb.sheetnames[2]
-        template_wb[sheet1_name].title = company1_name
-        template_wb[sheet2_name].title = company2_name
 
-        self._fill_geoseong_sheet(template_wb[company1_name], item_count, company1_rate, vat_rate)
-        self._fill_haegwang_sheet(template_wb[company2_name], item_count, company2_rate, vat_rate)
+        company1_title = self._sanitize_sheet_title(company1_name, "Company1")
+        company2_title = self._sanitize_sheet_title(company2_name, "Company2")
+        company1_title, company2_title = self._make_distinct_titles(company1_title, company2_title)
+
+        template_wb[sheet1_name].title = company1_title
+        template_wb[sheet2_name].title = company2_title
+
+        self._fill_geoseong_sheet(template_wb[company1_title], item_count, company1_rate, vat_rate)
+        self._fill_haegwang_sheet(template_wb[company2_title], item_count, company2_rate, vat_rate)
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         template_wb.save(output_path)
         return output_path
+
+    @staticmethod
+    def _sanitize_sheet_title(raw_title: str, fallback: str) -> str:
+        title = (raw_title or "").strip()
+        title = INVALID_SHEET_TITLE_CHARS.sub("_", title)
+        title = title.strip("'")
+        if not title:
+            title = fallback
+        return title[:31]
+
+    @staticmethod
+    def _make_distinct_titles(title1: str, title2: str) -> tuple[str, str]:
+        if title1 != title2:
+            return title1, title2
+
+        suffix = " (2)"
+        max_base_len = 31 - len(suffix)
+        title2 = f"{title2[:max_base_len]}{suffix}"
+        if title2 == title1:
+            title2 = "Company2"
+        return title1, title2
 
     def _replace_source_sheet(self, wb: Workbook, source_ws) -> None:
         old_ws = wb[wb.sheetnames[0]]

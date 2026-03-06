@@ -1,4 +1,4 @@
-import os
+﻿import os
 from pathlib import Path
 import tempfile
 
@@ -29,22 +29,22 @@ def index():
 def generate():
     uploaded = request.files.get("quote_file")
     if not uploaded or uploaded.filename == "":
-        flash("본견적 엑셀 파일을 선택해 주세요.")
+        flash("蹂멸껄???묒? ?뚯씪???좏깮??二쇱꽭??")
         return redirect(url_for("index"))
 
     if not allowed_file(uploaded.filename):
-        flash("엑셀 파일(.xlsx, .xlsm)만 업로드할 수 있습니다.")
+        flash("?묒? ?뚯씪(.xlsx, .xlsm)留??낅줈?쒗븷 ???덉뒿?덈떎.")
         return redirect(url_for("index"))
 
-    company1 = request.form.get("company1", "거성").strip() or "거성"
-    company2 = request.form.get("company2", "해광").strip() or "해광"
+    company1 = request.form.get("company1", "Company1").strip() or "Company1"
+    company2 = request.form.get("company2", "Company2").strip() or "Company2"
 
     try:
         rate1 = float(request.form.get("rate1", "15"))
         rate2 = float(request.form.get("rate2", "20"))
         vat_rate = float(request.form.get("vat_rate", "10"))
     except ValueError:
-        flash("가산율/할인율과 부가세율은 숫자로 입력해 주세요.")
+        flash("媛?곗쑉/?좎씤?④낵 遺媛?몄쑉? ?レ옄濡??낅젰??二쇱꽭??")
         return redirect(url_for("index"))
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -52,7 +52,7 @@ def generate():
         upload_path = tmp_dir / secure_filename(uploaded.filename)
         uploaded.save(upload_path)
 
-        output_path = tmp_dir / f"비교견적_{upload_path.stem}.xlsx"
+        output_path = tmp_dir / f"鍮꾧탳寃ъ쟻_{upload_path.stem}.xlsx"
 
         try:
             generator = QuoteGenerator(TEMPLATE_PATH)
@@ -68,6 +68,10 @@ def generate():
         except QuoteGenerationError as exc:
             flash(str(exc))
             return redirect(url_for("index"))
+        except Exception:
+            app.logger.exception("Unhandled error while generating quote file")
+            flash("파일 생성 중 오류가 발생했습니다. 입력 엑셀 형식을 확인해 주세요.")
+            return redirect(url_for("index"))
 
         return send_file(
             output_path,
@@ -80,3 +84,4 @@ def generate():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
+
