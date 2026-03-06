@@ -101,6 +101,37 @@
       const btnLoading = submitBtn.querySelector('.btn-loading');
       const submitStatus = document.getElementById('submit-status');
 
+      function setSubmitting(isSubmitting) {
+        submitBtn.disabled = isSubmitting;
+        btnLabel.hidden = isSubmitting;
+        btnLoading.hidden = !isSubmitting;
+      }
+
+      function setStatus(message, type) {
+        submitStatus.textContent = message;
+        submitStatus.hidden = false;
+        submitStatus.classList.remove('is-success', 'is-error');
+        if (type === 'success') submitStatus.classList.add('is-success');
+        if (type === 'error') submitStatus.classList.add('is-error');
+      }
+
+      function clearStatus() {
+        submitStatus.hidden = true;
+        submitStatus.classList.remove('is-success', 'is-error');
+      }
+
+      function parseDownloadName(contentDisposition) {
+        if (!contentDisposition) return null;
+        const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+        if (utf8Match && utf8Match[1]) {
+          try {
+            return decodeURIComponent(utf8Match[1]);
+          } catch (_) {}
+        }
+        const plainMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+        return plainMatch && plainMatch[1] ? plainMatch[1] : null;
+      }
+
       function updateSelectedFile() {
         if (fileInput.files && fileInput.files.length > 0) {
           selectedFile.textContent = '선택 파일: ' + fileInput.files[0].name;
@@ -152,20 +183,60 @@
 
       fileInput.addEventListener('change', updateSelectedFile);
 
-      form.addEventListener('submit', (event) => {
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
         if (!fileInput.files || fileInput.files.length === 0) {
           selectedFile.textContent = '파일을 먼저 선택해 주세요.';
           selectedFile.classList.remove('has-file');
           fileInput.focus();
-          event.preventDefault();
+          setStatus('파일을 먼저 선택해 주세요.', 'error');
           return;
         }
 
-        submitBtn.disabled = true;
-        btnLabel.hidden = true;
-        btnLoading.hidden = false;
-        submitStatus.hidden = false;
+        clearStatus();
+        setSubmitting(true);
+        setStatus('파일을 생성하는 중입니다. 완료될 때까지 잠시 기다려주세요.', null);
+
+        try {
+          const formData = new FormData(form);
+          const response = await fetch(form.action, {
+            method: 'POST',
+            body: formData,
+            redirect: 'follow',
+          });
+
+          if (!response.ok) {
+            throw new Error('서버 응답 오류');
+          }
+
+          const contentType = response.headers.get('Content-Type') || '';
+          if (!contentType.includes('spreadsheetml') && !contentType.includes('octet-stream')) {
+            throw new Error('엑셀 파일이 생성되지 않았습니다.');
+          }
+
+          const blob = await response.blob();
+          const contentDisposition = response.headers.get('Content-Disposition');
+          const downloadName = parseDownloadName(contentDisposition) || '비교견적.xlsx';
+
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = downloadName;
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          window.URL.revokeObjectURL(url);
+
+          setStatus('생성 완료. 파일 다운로드를 시작했습니다.', 'success');
+        } catch (error) {
+          setStatus('생성 실패. 입력 엑셀 형식 또는 서버 상태를 확인해 주세요.', 'error');
+        } finally {
+          setSubmitting(false);
+        }
       });
+
+      setSubmitting(false);
     })();
   </script>
 </body>
