@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
 import re
 from zipfile import BadZipFile
@@ -39,7 +40,7 @@ class QuoteGenerator:
     def __init__(self, template_path: Path):
         self.template_path = Path(template_path)
         if not self.template_path.exists():
-            raise QuoteGenerationError(f"템플릿 파일을 찾을 수 없습니다: {self.template_path}")
+            raise QuoteGenerationError(f"Template file not found: {self.template_path}")
 
     def generate(
         self,
@@ -55,25 +56,25 @@ class QuoteGenerator:
             template_wb = load_workbook(self.template_path)
         except (BadZipFile, InvalidFileException) as exc:
             raise QuoteGenerationError(
-                f"템플릿 파일을 열 수 없습니다: {self.template_path.name}. 파일이 손상되었는지 확인해 주세요."
+                f"Cannot open template file: {self.template_path.name}"
             ) from exc
 
         try:
             source_wb = load_workbook(source_quote_path, data_only=False)
         except (BadZipFile, InvalidFileException) as exc:
             raise QuoteGenerationError(
-                "업로드한 엑셀 파일을 열 수 없습니다. .xlsx/.xlsm 형식인지, 파일이 손상되지 않았는지 확인해 주세요."
+                "Cannot open uploaded workbook. Check .xlsx/.xlsm format and file integrity."
             ) from exc
 
         source_ws = source_wb.worksheets[0]
         item_count = detect_item_count(source_ws)
         if item_count == 0:
-            raise QuoteGenerationError("본견적 첫 번째 시트에서 품목을 찾지 못했습니다.")
+            raise QuoteGenerationError("No items found in the first sheet of uploaded workbook.")
 
         self._replace_source_sheet(template_wb, source_ws)
 
         if len(template_wb.sheetnames) < 3:
-            raise QuoteGenerationError("템플릿 시트 구성이 올바르지 않습니다. 기본 템플릿 파일을 확인해 주세요.")
+            raise QuoteGenerationError("Template workbook structure is invalid.")
 
         sheet1_name = template_wb.sheetnames[1]
         sheet2_name = template_wb.sheetnames[2]
@@ -85,8 +86,8 @@ class QuoteGenerator:
         template_wb[sheet1_name].title = company1_title
         template_wb[sheet2_name].title = company2_title
 
-        self._fill_geoseong_sheet(template_wb[company1_title], item_count, company1_rate, vat_rate)
-        self._fill_haegwang_sheet(template_wb[company2_title], item_count, company2_rate, vat_rate)
+        self._fill_geoseong_sheet(template_wb[company1_title], source_ws, item_count, company1_rate, vat_rate)
+        self._fill_haegwang_sheet(template_wb[company2_title], source_ws, item_count, company2_rate, vat_rate)
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         template_wb.save(output_path)
@@ -113,13 +114,36 @@ class QuoteGenerator:
             title2 = "Company2"
         return title1, title2
 
+    @staticmethod
+    def _to_float(value) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            cleaned = value.replace(",", "").strip()
+            if cleaned == "":
+                return None
+            try:
+                return float(cleaned)
+            except ValueError:
+                return None
+        return None
+
+    @staticmethod
+    def _round_to_hundred_half_up(value: float) -> float:
+        factor = 100.0
+        if value >= 0:
+            return math.floor(value / factor + 0.5) * factor
+        return -math.floor(abs(value) / factor + 0.5) * factor
+
     def _replace_source_sheet(self, wb: Workbook, source_ws) -> None:
         old_ws = wb[wb.sheetnames[0]]
         wb.remove(old_ws)
         new_ws = wb.create_sheet(title=SOURCE_SHEET_NAME, index=0)
         copy_sheet_content(source_ws, new_ws)
 
-    def _fill_geoseong_sheet(self, ws, item_count: int, rate: float, vat_rate: float) -> None:
+    def _fill_geoseong_sheet(self, ws, source_ws, item_count: int, rate: float, vat_rate: float) -> None:
         spec = CompareSheetSpec(
             sheet_name=ws.title,
             item_start_row=11,
@@ -137,26 +161,40 @@ class QuoteGenerator:
 
         total_row = spec.template_total_row + extra_rows
         last_item_row = spec.item_start_row + item_count - 1
+        supply_total = 0.0
 
         for row in range(spec.item_start_row, last_item_row + 1):
             source_row = row - spec.item_start_row + 2
+            source_name = source_ws.cell(source_row, 1).value
+            source_qty = source_ws.cell(source_row, 2).value
+            source_price = source_ws.cell(source_row, 3).value
+
+            qty_num = self._to_float(source_qty)
+            price_num = self._to_float(source_price)
+            adjusted_price = self._round_to_hundred_half_up(price_num * (1 + rate)) if price_num is not None else None
+            supply_amount = adjusted_price * qty_num if adjusted_price is not None and qty_num is not None else None
+            vat_amount = supply_amount * vat_rate if supply_amount is not None else None
+
             ws.cell(row, 1).value = row - spec.item_start_row + 1
-            ws.cell(row, 2).value = f"={SOURCE_SHEET_NAME}!A{source_row}"
-            ws.cell(row, 6).value = f"={SOURCE_SHEET_NAME}!B{source_row}"
-            ws.cell(row, 8).value = f"=ROUND({SOURCE_SHEET_NAME}!C{source_row}*(1+{rate}),-2)"
-            ws.cell(row, 9).value = f"=H{row}*F{row}"
-            ws.cell(row, 11).value = f"=I{row}*{vat_rate}"
+            ws.cell(row, 2).value = source_name
+            ws.cell(row, 6).value = source_qty
+            ws.cell(row, 8).value = adjusted_price
+            ws.cell(row, 9).value = supply_amount
+            ws.cell(row, 11).value = vat_amount
             ws.cell(row, 13).value = None
+
+            if supply_amount is not None:
+                supply_total += supply_amount
 
         for row in range(last_item_row + 1, total_row):
             clear_row_values(ws, row, [1, 2, 6, 8, 9, 11, 13])
 
-        ws.cell(total_row, 1).value = "합 계"
-        ws.cell(total_row, 9).value = f"=SUM(I{spec.item_start_row}:I{last_item_row})"
-        ws.cell(total_row, 11).value = f"=I{total_row}*{vat_rate}"
-        ws.cell(9, 10).value = f"=I{total_row}+K{total_row}"
+        ws.cell(total_row, 1).value = "TOTAL"
+        ws.cell(total_row, 9).value = supply_total
+        ws.cell(total_row, 11).value = supply_total * vat_rate
+        ws.cell(9, 10).value = ws.cell(total_row, 9).value + ws.cell(total_row, 11).value
 
-    def _fill_haegwang_sheet(self, ws, item_count: int, rate: float, vat_rate: float) -> None:
+    def _fill_haegwang_sheet(self, ws, source_ws, item_count: int, rate: float, vat_rate: float) -> None:
         spec = CompareSheetSpec(
             sheet_name=ws.title,
             item_start_row=15,
@@ -174,23 +212,37 @@ class QuoteGenerator:
 
         total_row = spec.template_total_row + extra_rows
         last_item_row = spec.item_start_row + item_count - 1
+        supply_total = 0.0
 
         for row in range(spec.item_start_row, last_item_row + 1):
             source_row = row - spec.item_start_row + 2
+            source_name = source_ws.cell(source_row, 1).value
+            source_qty = source_ws.cell(source_row, 2).value
+            source_price = source_ws.cell(source_row, 3).value
+
+            qty_num = self._to_float(source_qty)
+            price_num = self._to_float(source_price)
+            adjusted_price = self._round_to_hundred_half_up(price_num * (1 + rate)) if price_num is not None else None
+            supply_amount = adjusted_price * qty_num if adjusted_price is not None and qty_num is not None else None
+            vat_amount = supply_amount * vat_rate if supply_amount is not None else None
+
             ws.cell(row, 3).value = row - spec.item_start_row + 1
-            ws.cell(row, 4).value = f"={SOURCE_SHEET_NAME}!A{source_row}"
-            ws.cell(row, 18).value = f"={SOURCE_SHEET_NAME}!B{source_row}"
-            ws.cell(row, 19).value = f"=ROUND({SOURCE_SHEET_NAME}!C{source_row}*(1+{rate}),-2)"
-            ws.cell(row, 22).value = f"=R{row}*S{row}"
-            ws.cell(row, 26).value = f"=V{row}*{vat_rate}"
+            ws.cell(row, 4).value = source_name
+            ws.cell(row, 18).value = source_qty
+            ws.cell(row, 19).value = adjusted_price
+            ws.cell(row, 22).value = supply_amount
+            ws.cell(row, 26).value = vat_amount
             ws.cell(row, 29).value = None
+
+            if supply_amount is not None:
+                supply_total += supply_amount
 
         for row in range(last_item_row + 1, total_row):
             clear_row_values(ws, row, [3, 4, 18, 19, 22, 26, 29])
 
-        ws.cell(total_row, 3).value = "공급가액"
-        ws.cell(total_row, 5).value = f"=SUM(V{spec.item_start_row}:V{last_item_row})"
-        ws.cell(total_row, 10).value = "세액"
-        ws.cell(total_row, 14).value = f"=E{total_row}*{vat_rate}"
-        ws.cell(total_row, 19).value = "합계(Total)"
-        ws.cell(total_row, 25).value = f"=E{total_row}+N{total_row}"
+        ws.cell(total_row, 3).value = "TOTAL"
+        ws.cell(total_row, 5).value = supply_total
+        ws.cell(total_row, 10).value = "VAT"
+        ws.cell(total_row, 14).value = supply_total * vat_rate
+        ws.cell(total_row, 19).value = "SUM(Total)"
+        ws.cell(total_row, 25).value = ws.cell(total_row, 5).value + ws.cell(total_row, 14).value
