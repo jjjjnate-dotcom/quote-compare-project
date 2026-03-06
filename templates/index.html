@@ -30,15 +30,15 @@
     <form id="generate-form" method="post" action="{{ url_for('generate') }}" enctype="multipart/form-data" class="card" novalidate>
       <div class="section-head">
         <h2>업로드 및 옵션</h2>
-        <p>`.xlsx` 또는 `.xlsm` 파일 1개를 선택하세요.</p>
+        <p>`.xlsx`, `.xlsm`, `.pdf` 파일 1개를 선택하세요.</p>
       </div>
 
-      <label class="field-label" for="quote_file">본견적 엑셀 파일</label>
+      <label class="field-label" for="quote_file">본견적 파일</label>
       <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-controls="quote_file" aria-label="엑셀 파일 드래그 앤 드롭 영역">
-        <input id="quote_file" type="file" name="quote_file" accept=".xlsx,.xlsm" required>
+        <input id="quote_file" type="file" name="quote_file" accept=".xlsx,.xlsm,.pdf" required>
         <div class="drop-inner">
           <p class="drop-title">파일을 여기에 끌어다 놓거나 클릭해서 선택</p>
-          <p class="drop-sub">지원 형식: .xlsx, .xlsm</p>
+          <p class="drop-sub">지원 형식: .xlsx, .xlsm, .pdf</p>
           <p id="selected-file" class="selected-file" aria-live="polite">선택된 파일 없음</p>
         </div>
       </div>
@@ -86,6 +86,7 @@
         <li>첫 번째 시트가 본견적 시트여야 합니다.</li>
         <li>형식은 같고 항목 수만 달라야 합니다.</li>
         <li>A열 품목명, B열 수량, C열 가격을 기준으로 계산합니다.</li>
+        <li>PDF는 텍스트 추출 가능한 문서여야 하며 품목/수량/단가 표가 필요합니다.</li>
       </ul>
     </section>
   </main>

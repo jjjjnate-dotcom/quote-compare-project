@@ -6,6 +6,7 @@ from flask import Flask, render_template, request, send_file, flash, redirect, u
 from werkzeug.utils import secure_filename
 
 from src.quote_generator import QuoteGenerator, QuoteGenerationError
+from src.pdf_quote_parser import convert_pdf_to_source_workbook, PdfQuoteParseError
 
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATE_PATH = BASE_DIR / "resources" / "comparison_template.xlsx"
@@ -16,7 +17,7 @@ app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
 
 def allowed_file(filename: str) -> bool:
-    return "." in filename and filename.rsplit(".", 1)[1].lower() in {"xlsx", "xlsm"}
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in {"xlsx", "xlsm", "pdf"}
 
 def make_safe_upload_name(original_name: str) -> str:
     safe_name = secure_filename(original_name)
@@ -24,7 +25,7 @@ def make_safe_upload_name(original_name: str) -> str:
 
     # Non-ASCII names can collapse to "xlsx"/"xlsm" (without dot) via secure_filename.
     if "." not in safe_name:
-        if original_suffix in {".xlsx", ".xlsm"}:
+        if original_suffix in {".xlsx", ".xlsm", ".pdf"}:
             return f"upload{original_suffix}"
         return "upload.xlsx"
 
@@ -45,7 +46,7 @@ def generate():
         return redirect(url_for("index"))
 
     if not allowed_file(uploaded.filename):
-        flash("엑셀 파일(.xlsx, .xlsm)만 업로드할 수 있습니다.")
+        flash("엑셀 또는 PDF 파일(.xlsx, .xlsm, .pdf)만 업로드할 수 있습니다.")
         return redirect(url_for("index"))
 
     company1 = request.form.get("company1", "Company1").strip() or "Company1"
@@ -63,13 +64,22 @@ def generate():
         tmp_dir = Path(tmp_dir)
         upload_path = tmp_dir / make_safe_upload_name(uploaded.filename)
         uploaded.save(upload_path)
+        source_quote_path = upload_path
+
+        if upload_path.suffix.lower() == ".pdf":
+            source_quote_path = tmp_dir / f"{upload_path.stem}_parsed.xlsx"
+            try:
+                convert_pdf_to_source_workbook(upload_path, source_quote_path)
+            except PdfQuoteParseError as exc:
+                flash(str(exc))
+                return redirect(url_for("index"))
 
         output_path = tmp_dir / f"비교견적_{upload_path.stem}.xlsx"
 
         try:
             generator = QuoteGenerator(TEMPLATE_PATH)
             generator.generate(
-                source_quote_path=upload_path,
+                source_quote_path=source_quote_path,
                 output_path=output_path,
                 company1_name=company1,
                 company2_name=company2,
