@@ -25,6 +25,7 @@ def index():
 
 
 @app.route("/generate", methods=["POST"])
+@app.route("/generate/", methods=["POST"])
 def generate():
     uploaded = request.files.get("quote_file")
     if not uploaded or uploaded.filename == "":
