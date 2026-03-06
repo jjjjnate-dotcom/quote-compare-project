@@ -41,11 +41,11 @@ def index():
 def generate():
     uploaded = request.files.get("quote_file")
     if not uploaded or uploaded.filename == "":
-        flash("蹂멸껄???묒? ?뚯씪???좏깮??二쇱꽭??")
+        flash("본견적 엑셀 파일을 선택해 주세요.")
         return redirect(url_for("index"))
 
     if not allowed_file(uploaded.filename):
-        flash("?묒? ?뚯씪(.xlsx, .xlsm)留??낅줈?쒗븷 ???덉뒿?덈떎.")
+        flash("엑셀 파일(.xlsx, .xlsm)만 업로드할 수 있습니다.")
         return redirect(url_for("index"))
 
     company1 = request.form.get("company1", "Company1").strip() or "Company1"
@@ -56,7 +56,7 @@ def generate():
         rate2 = float(request.form.get("rate2", "20"))
         vat_rate = float(request.form.get("vat_rate", "10"))
     except ValueError:
-        flash("媛?곗쑉/?좎씤?④낵 遺媛?몄쑉? ?レ옄濡??낅젰??二쇱꽭??")
+        flash("가산율/할인율과 부가세율은 숫자로 입력해 주세요.")
         return redirect(url_for("index"))
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -64,7 +64,7 @@ def generate():
         upload_path = tmp_dir / make_safe_upload_name(uploaded.filename)
         uploaded.save(upload_path)
 
-        output_path = tmp_dir / f"鍮꾧탳寃ъ쟻_{upload_path.stem}.xlsx"
+        output_path = tmp_dir / f"비교견적_{upload_path.stem}.xlsx"
 
         try:
             generator = QuoteGenerator(TEMPLATE_PATH)
