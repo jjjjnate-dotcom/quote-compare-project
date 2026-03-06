@@ -18,6 +18,18 @@ app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 def allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in {"xlsx", "xlsm"}
 
+def make_safe_upload_name(original_name: str) -> str:
+    safe_name = secure_filename(original_name)
+    original_suffix = Path(original_name).suffix.lower()
+
+    # Non-ASCII names can collapse to "xlsx"/"xlsm" (without dot) via secure_filename.
+    if "." not in safe_name:
+        if original_suffix in {".xlsx", ".xlsm"}:
+            return f"upload{original_suffix}"
+        return "upload.xlsx"
+
+    return safe_name
+
 
 @app.route("/", methods=["GET"])
 def index():
@@ -49,7 +61,7 @@ def generate():
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_dir = Path(tmp_dir)
-        upload_path = tmp_dir / secure_filename(uploaded.filename)
+        upload_path = tmp_dir / make_safe_upload_name(uploaded.filename)
         uploaded.save(upload_path)
 
         output_path = tmp_dir / f"鍮꾧탳寃ъ쟻_{upload_path.stem}.xlsx"
