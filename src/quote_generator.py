@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
+from zipfile import BadZipFile
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 
 from .excel_utils import (
     SOURCE_SHEET_NAME,
@@ -49,8 +51,19 @@ class QuoteGenerator:
         company2_rate: float,
         vat_rate: float,
     ) -> Path:
-        template_wb = load_workbook(self.template_path)
-        source_wb = load_workbook(source_quote_path, data_only=False)
+        try:
+            template_wb = load_workbook(self.template_path)
+        except (BadZipFile, InvalidFileException) as exc:
+            raise QuoteGenerationError(
+                f"템플릿 파일을 열 수 없습니다: {self.template_path.name}. 파일이 손상되었는지 확인해 주세요."
+            ) from exc
+
+        try:
+            source_wb = load_workbook(source_quote_path, data_only=False)
+        except (BadZipFile, InvalidFileException) as exc:
+            raise QuoteGenerationError(
+                "업로드한 엑셀 파일을 열 수 없습니다. .xlsx/.xlsm 형식인지, 파일이 손상되지 않았는지 확인해 주세요."
+            ) from exc
 
         source_ws = source_wb.worksheets[0]
         item_count = detect_item_count(source_ws)

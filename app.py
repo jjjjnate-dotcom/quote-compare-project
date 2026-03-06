@@ -68,9 +68,9 @@ def generate():
         except QuoteGenerationError as exc:
             flash(str(exc))
             return redirect(url_for("index"))
-        except Exception:
+        except Exception as exc:
             app.logger.exception("Unhandled error while generating quote file")
-            flash("파일 생성 중 오류가 발생했습니다. 입력 엑셀 형식을 확인해 주세요.")
+            flash(f"파일 생성 중 오류가 발생했습니다. 상세: {exc}")
             return redirect(url_for("index"))
 
         return send_file(
