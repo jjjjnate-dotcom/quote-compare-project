@@ -7,6 +7,7 @@ from werkzeug.utils import secure_filename
 
 from src.quote_generator import QuoteGenerator, QuoteGenerationError
 from src.pdf_quote_parser import convert_pdf_to_source_workbook, PdfQuoteParseError
+from src.excel_quote_parser import convert_excel_to_source_workbook, ExcelQuoteParseError
 
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATE_PATH = BASE_DIR / "resources" / "comparison_template.xlsx"
@@ -64,13 +65,19 @@ def generate():
         tmp_dir = Path(tmp_dir)
         upload_path = tmp_dir / make_safe_upload_name(uploaded.filename)
         uploaded.save(upload_path)
-        source_quote_path = upload_path
+        source_quote_path = tmp_dir / f"{upload_path.stem}_normalized.xlsx"
 
         if upload_path.suffix.lower() == ".pdf":
             source_quote_path = tmp_dir / f"{upload_path.stem}_parsed.xlsx"
             try:
                 convert_pdf_to_source_workbook(upload_path, source_quote_path)
             except PdfQuoteParseError as exc:
+                flash(str(exc))
+                return redirect(url_for("index"))
+        else:
+            try:
+                convert_excel_to_source_workbook(upload_path, source_quote_path)
+            except ExcelQuoteParseError as exc:
                 flash(str(exc))
                 return redirect(url_for("index"))
 
