@@ -72,7 +72,7 @@
 
       <label class="option-check">
         <input type="checkbox" name="include_pdf" value="1" checked>
-        업체별 PDF도 함께 다운로드 (ZIP)
+        엑셀 결과 시트를 업체별 PDF로도 다운로드 (ZIP)
       </label>
 
       <button id="generate-btn" type="submit" class="generate-btn">
@@ -240,7 +240,7 @@
           const isZipFile = downloadName.toLowerCase().endsWith('.zip') || isZip;
           setStatus(
             isZipFile
-              ? '생성 완료. 엑셀+업체별 PDF ZIP 다운로드를 시작했습니다.'
+              ? '생성 완료. 엑셀 결과물과 업체별 PDF ZIP 다운로드를 시작했습니다.'
               : '생성 완료. 파일 다운로드를 시작했습니다.',
             'success'
           );

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 import math
 from pathlib import Path
 import re
@@ -193,6 +194,8 @@ class QuoteGenerator:
         ws.cell(total_row, 9).value = supply_total
         ws.cell(total_row, 11).value = supply_total * vat_rate
         ws.cell(9, 10).value = ws.cell(total_row, 9).value + ws.cell(total_row, 11).value
+        ws.cell(4, 2).value = date.today()
+        ws.cell(9, 6).value = ws.cell(9, 10).value
 
     def _fill_haegwang_sheet(self, ws, source_ws, item_count: int, rate: float, vat_rate: float) -> None:
         spec = CompareSheetSpec(
@@ -246,3 +249,4 @@ class QuoteGenerator:
         ws.cell(total_row, 14).value = supply_total * vat_rate
         ws.cell(total_row, 19).value = "SUM(Total)"
         ws.cell(total_row, 25).value = ws.cell(total_row, 5).value + ws.cell(total_row, 14).value
+        ws.cell(8, 6).value = date.today()

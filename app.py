@@ -4,12 +4,13 @@ import tempfile
 import zipfile
 
 from flask import Flask, render_template, request, send_file, flash, redirect, url_for
+from openpyxl import load_workbook
 from werkzeug.utils import secure_filename
 
 from src.quote_generator import QuoteGenerator, QuoteGenerationError
 from src.pdf_quote_parser import convert_pdf_to_source_workbook, PdfQuoteParseError
 from src.excel_quote_parser import convert_excel_to_source_workbook, ExcelQuoteParseError
-from src.quote_pdf_exporter import export_company_quote_pdf
+from src.quote_pdf_exporter import export_sheet_to_pdf
 
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATE_PATH = BASE_DIR / "resources" / "comparison_template.xlsx"
@@ -108,24 +109,15 @@ def generate():
             return redirect(url_for("index"))
 
         if include_pdf:
-            company1_pdf = tmp_dir / f"{company1}_견적서.pdf"
-            company2_pdf = tmp_dir / f"{company2}_견적서.pdf"
+            workbook = load_workbook(output_path, data_only=False)
+            company1_sheet = workbook.sheetnames[1]
+            company2_sheet = workbook.sheetnames[2]
+            company1_pdf = tmp_dir / f"{company1_sheet}_견적서.pdf"
+            company2_pdf = tmp_dir / f"{company2_sheet}_견적서.pdf"
 
             try:
-                export_company_quote_pdf(
-                    source_quote_path=source_quote_path,
-                    output_pdf_path=company1_pdf,
-                    company_name=company1,
-                    rate=rate1 / 100,
-                    vat_rate=vat_rate / 100,
-                )
-                export_company_quote_pdf(
-                    source_quote_path=source_quote_path,
-                    output_pdf_path=company2_pdf,
-                    company_name=company2,
-                    rate=rate2 / 100,
-                    vat_rate=vat_rate / 100,
-                )
+                export_sheet_to_pdf(output_path, company1_sheet, company1_pdf)
+                export_sheet_to_pdf(output_path, company2_sheet, company2_pdf)
             except Exception as exc:
                 app.logger.exception("Unhandled error while generating quote PDF files")
                 flash(f"PDF 생성 중 오류가 발생했습니다. 상세: {exc}")
