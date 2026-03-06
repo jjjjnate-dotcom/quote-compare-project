@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8">
@@ -7,62 +7,166 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <div class="wrap">
-    <h1>비교견적 자동 생성기</h1>
-    <p class="desc">본견적 엑셀 파일 1개만 업로드하면 비교견적 파일을 자동으로 만듭니다.</p>
+  <div class="bg-orb orb-a" aria-hidden="true"></div>
+  <div class="bg-orb orb-b" aria-hidden="true"></div>
+
+  <main class="wrap">
+    <header class="hero">
+      <p class="hero-kicker">Quote Compare Tool</p>
+      <h1>비교견적 자동 생성기</h1>
+      <p class="desc">본견적 엑셀 파일을 업로드하면 비교견적 파일을 자동으로 생성합니다.</p>
+    </header>
 
     {% with messages = get_flashed_messages() %}
       {% if messages %}
-        <div class="flash-box">
+        <section class="flash-box" aria-live="polite">
           {% for message in messages %}
-            <div class="flash-item">{{ message }}</div>
+            <p class="flash-item">{{ message }}</p>
           {% endfor %}
-        </div>
+        </section>
       {% endif %}
     {% endwith %}
 
-    <form method="post" action="{{ url_for('generate') }}" enctype="multipart/form-data" class="card">
-      <label>본견적 엑셀 파일</label>
-      <input type="file" name="quote_file" accept=".xlsx,.xlsm" required>
+    <form id="generate-form" method="post" action="{{ url_for('generate') }}" enctype="multipart/form-data" class="card" novalidate>
+      <div class="section-head">
+        <h2>업로드 및 옵션</h2>
+        <p>`.xlsx` 또는 `.xlsm` 파일 1개를 선택하세요.</p>
+      </div>
 
-      <div class="grid two">
-        <div>
-          <label>업체1 이름</label>
-          <input type="text" name="company1" value="거성">
-        </div>
-        <div>
-          <label>업체1 가산율 / 할인율(%)</label>
-          <input type="number" step="0.1" name="rate1" value="15">
+      <label class="field-label" for="quote_file">본견적 엑셀 파일</label>
+      <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-controls="quote_file" aria-label="엑셀 파일 드래그 앤 드롭 영역">
+        <input id="quote_file" type="file" name="quote_file" accept=".xlsx,.xlsm" required>
+        <div class="drop-inner">
+          <p class="drop-title">파일을 여기에 끌어다 놓거나 클릭해서 선택</p>
+          <p class="drop-sub">지원 형식: .xlsx, .xlsm</p>
+          <p id="selected-file" class="selected-file" aria-live="polite">선택된 파일 없음</p>
         </div>
       </div>
 
       <div class="grid two">
         <div>
-          <label>업체2 이름</label>
-          <input type="text" name="company2" value="해광">
+          <label class="field-label" for="company1">업체1 이름</label>
+          <input id="company1" type="text" name="company1" value="거성" autocomplete="off">
         </div>
         <div>
-          <label>업체2 가산율 / 할인율(%)</label>
-          <input type="number" step="0.1" name="rate2" value="20">
+          <label class="field-label" for="rate1">업체1 가산율 / 할인율(%)</label>
+          <input id="rate1" type="number" step="0.1" name="rate1" value="15">
+        </div>
+      </div>
+
+      <div class="grid two">
+        <div>
+          <label class="field-label" for="company2">업체2 이름</label>
+          <input id="company2" type="text" name="company2" value="해광" autocomplete="off">
+        </div>
+        <div>
+          <label class="field-label" for="rate2">업체2 가산율 / 할인율(%)</label>
+          <input id="rate2" type="number" step="0.1" name="rate2" value="20">
         </div>
       </div>
 
       <div>
-        <label>부가세율(%)</label>
-        <input type="number" step="0.1" name="vat_rate" value="10">
+        <label class="field-label" for="vat_rate">부가세율(%)</label>
+        <input id="vat_rate" type="number" step="0.1" name="vat_rate" value="10">
       </div>
 
-      <button type="submit">비교견적 생성</button>
+      <button id="generate-btn" type="submit" class="generate-btn">
+        <span class="btn-label">비교견적 생성</span>
+        <span class="btn-loading" hidden>
+          <span class="spinner" aria-hidden="true"></span>
+          생성 중...
+        </span>
+      </button>
+      <p id="submit-status" class="submit-status" hidden>파일을 생성하는 중입니다. 완료될 때까지 잠시 기다려주세요.</p>
     </form>
 
-    <div class="help">
+    <section class="help">
       <h2>입력 규칙</h2>
       <ul>
-        <li>첫 번째 시트가 본견적이어야 합니다.</li>
-        <li>형식은 같고 품목 수만 달라져야 합니다.</li>
-        <li>A열 품목명, B열 수량, C열 가격을 기준으로 읽습니다.</li>
+        <li>첫 번째 시트가 본견적 시트여야 합니다.</li>
+        <li>형식은 같고 항목 수만 달라야 합니다.</li>
+        <li>A열 품목명, B열 수량, C열 가격을 기준으로 계산합니다.</li>
       </ul>
-    </div>
-  </div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const form = document.getElementById('generate-form');
+      const fileInput = document.getElementById('quote_file');
+      const dropzone = document.getElementById('dropzone');
+      const selectedFile = document.getElementById('selected-file');
+      const submitBtn = document.getElementById('generate-btn');
+      const btnLabel = submitBtn.querySelector('.btn-label');
+      const btnLoading = submitBtn.querySelector('.btn-loading');
+      const submitStatus = document.getElementById('submit-status');
+
+      function updateSelectedFile() {
+        if (fileInput.files && fileInput.files.length > 0) {
+          selectedFile.textContent = '선택 파일: ' + fileInput.files[0].name;
+          selectedFile.classList.add('has-file');
+        } else {
+          selectedFile.textContent = '선택된 파일 없음';
+          selectedFile.classList.remove('has-file');
+        }
+      }
+
+      function onDrop(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        dropzone.classList.remove('is-dragover');
+
+        const files = event.dataTransfer && event.dataTransfer.files;
+        if (!files || files.length === 0) return;
+
+        fileInput.files = files;
+        updateSelectedFile();
+      }
+
+      ['dragenter', 'dragover'].forEach((eventName) => {
+        dropzone.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          dropzone.classList.add('is-dragover');
+        });
+      });
+
+      ['dragleave', 'drop'].forEach((eventName) => {
+        dropzone.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (eventName === 'dragleave' && event.target !== dropzone) return;
+          dropzone.classList.remove('is-dragover');
+        });
+      });
+
+      dropzone.addEventListener('drop', onDrop);
+
+      dropzone.addEventListener('click', () => fileInput.click());
+      dropzone.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          fileInput.click();
+        }
+      });
+
+      fileInput.addEventListener('change', updateSelectedFile);
+
+      form.addEventListener('submit', (event) => {
+        if (!fileInput.files || fileInput.files.length === 0) {
+          selectedFile.textContent = '파일을 먼저 선택해 주세요.';
+          selectedFile.classList.remove('has-file');
+          fileInput.focus();
+          event.preventDefault();
+          return;
+        }
+
+        submitBtn.disabled = true;
+        btnLabel.hidden = true;
+        btnLoading.hidden = false;
+        submitStatus.hidden = false;
+      });
+    })();
+  </script>
 </body>
 </html>
