@@ -1,6 +1,7 @@
 ﻿import os
 from pathlib import Path
 import tempfile
+import zipfile
 
 from flask import Flask, render_template, request, send_file, flash, redirect, url_for
 from werkzeug.utils import secure_filename
@@ -8,6 +9,7 @@ from werkzeug.utils import secure_filename
 from src.quote_generator import QuoteGenerator, QuoteGenerationError
 from src.pdf_quote_parser import convert_pdf_to_source_workbook, PdfQuoteParseError
 from src.excel_quote_parser import convert_excel_to_source_workbook, ExcelQuoteParseError
+from src.quote_pdf_exporter import export_company_quote_pdf
 
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATE_PATH = BASE_DIR / "resources" / "comparison_template.xlsx"
@@ -20,11 +22,12 @@ app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 def allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in {"xlsx", "xlsm", "pdf"}
 
+
 def make_safe_upload_name(original_name: str) -> str:
     safe_name = secure_filename(original_name)
     original_suffix = Path(original_name).suffix.lower()
 
-    # Non-ASCII names can collapse to "xlsx"/"xlsm" (without dot) via secure_filename.
+    # Non-ASCII names can collapse to extensions without a dot via secure_filename.
     if "." not in safe_name:
         if original_suffix in {".xlsx", ".xlsm", ".pdf"}:
             return f"upload{original_suffix}"
@@ -43,7 +46,7 @@ def index():
 def generate():
     uploaded = request.files.get("quote_file")
     if not uploaded or uploaded.filename == "":
-        flash("본견적 엑셀 파일을 선택해 주세요.")
+        flash("본견적 파일을 선택해 주세요.")
         return redirect(url_for("index"))
 
     if not allowed_file(uploaded.filename):
@@ -52,6 +55,7 @@ def generate():
 
     company1 = request.form.get("company1", "Company1").strip() or "Company1"
     company2 = request.form.get("company2", "Company2").strip() or "Company2"
+    include_pdf = request.form.get("include_pdf") == "1"
 
     try:
         rate1 = float(request.form.get("rate1", "15"))
@@ -65,6 +69,7 @@ def generate():
         tmp_dir = Path(tmp_dir)
         upload_path = tmp_dir / make_safe_upload_name(uploaded.filename)
         uploaded.save(upload_path)
+
         source_quote_path = tmp_dir / f"{upload_path.stem}_normalized.xlsx"
 
         if upload_path.suffix.lower() == ".pdf":
@@ -102,6 +107,43 @@ def generate():
             flash(f"파일 생성 중 오류가 발생했습니다. 상세: {exc}")
             return redirect(url_for("index"))
 
+        if include_pdf:
+            company1_pdf = tmp_dir / f"{company1}_견적서.pdf"
+            company2_pdf = tmp_dir / f"{company2}_견적서.pdf"
+
+            try:
+                export_company_quote_pdf(
+                    source_quote_path=source_quote_path,
+                    output_pdf_path=company1_pdf,
+                    company_name=company1,
+                    rate=rate1 / 100,
+                    vat_rate=vat_rate / 100,
+                )
+                export_company_quote_pdf(
+                    source_quote_path=source_quote_path,
+                    output_pdf_path=company2_pdf,
+                    company_name=company2,
+                    rate=rate2 / 100,
+                    vat_rate=vat_rate / 100,
+                )
+            except Exception as exc:
+                app.logger.exception("Unhandled error while generating quote PDF files")
+                flash(f"PDF 생성 중 오류가 발생했습니다. 상세: {exc}")
+                return redirect(url_for("index"))
+
+            zip_path = tmp_dir / f"비교견적_{upload_path.stem}.zip"
+            with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                zf.write(output_path, arcname=output_path.name)
+                zf.write(company1_pdf, arcname=company1_pdf.name)
+                zf.write(company2_pdf, arcname=company2_pdf.name)
+
+            return send_file(
+                zip_path,
+                as_attachment=True,
+                download_name=zip_path.name,
+                mimetype="application/zip",
+            )
+
         return send_file(
             output_path,
             as_attachment=True,
@@ -113,4 +155,3 @@ def generate():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
-
