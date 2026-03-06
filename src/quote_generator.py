@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import copy
 from dataclasses import dataclass
 from datetime import date
 import math
@@ -18,6 +19,7 @@ from .excel_utils import (
     copy_sheet_content,
     detect_item_count,
 )
+from .quote_source_metadata import QuoteSourceMetadata, read_metadata_sheet
 
 
 class QuoteGenerationError(Exception):
@@ -56,18 +58,15 @@ class QuoteGenerator:
         try:
             template_wb = load_workbook(self.template_path)
         except (BadZipFile, InvalidFileException) as exc:
-            raise QuoteGenerationError(
-                f"Cannot open template file: {self.template_path.name}"
-            ) from exc
+            raise QuoteGenerationError(f"Cannot open template file: {self.template_path.name}") from exc
 
         try:
             source_wb = load_workbook(source_quote_path, data_only=False)
         except (BadZipFile, InvalidFileException) as exc:
-            raise QuoteGenerationError(
-                "Cannot open uploaded workbook. Check .xlsx/.xlsm format and file integrity."
-            ) from exc
+            raise QuoteGenerationError("Cannot open uploaded workbook. Check .xlsx/.xlsm format and file integrity.") from exc
 
         source_ws = source_wb.worksheets[0]
+        source_metadata = read_metadata_sheet(source_wb)
         item_count = detect_item_count(source_ws)
         if item_count == 0:
             raise QuoteGenerationError("No items found in the first sheet of uploaded workbook.")
@@ -87,8 +86,22 @@ class QuoteGenerator:
         template_wb[sheet1_name].title = company1_title
         template_wb[sheet2_name].title = company2_title
 
-        self._fill_geoseong_sheet(template_wb[company1_title], source_ws, item_count, company1_rate, vat_rate)
-        self._fill_haegwang_sheet(template_wb[company2_title], source_ws, item_count, company2_rate, vat_rate)
+        self._fill_geoseong_sheet(
+            template_wb[company1_title],
+            source_ws,
+            source_metadata,
+            item_count,
+            company1_rate,
+            vat_rate,
+        )
+        self._fill_haegwang_sheet(
+            template_wb[company2_title],
+            source_ws,
+            source_metadata,
+            item_count,
+            company2_rate,
+            vat_rate,
+        )
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         template_wb.save(output_path)
@@ -144,7 +157,52 @@ class QuoteGenerator:
         new_ws = wb.create_sheet(title=SOURCE_SHEET_NAME, index=0)
         copy_sheet_content(source_ws, new_ws)
 
-    def _fill_geoseong_sheet(self, ws, source_ws, item_count: int, rate: float, vat_rate: float) -> None:
+    def _apply_recipient_to_geoseong(self, ws, metadata: QuoteSourceMetadata) -> None:
+        if not metadata.has_values():
+            return
+
+        lines: list[str] = []
+        if metadata.recipient_name:
+            lines.append(metadata.recipient_name)
+
+        contact_parts: list[str] = []
+        if metadata.recipient_phone:
+            contact_parts.append(f"TEL {metadata.recipient_phone}")
+        if metadata.recipient_fax:
+            contact_parts.append(f"FAX {metadata.recipient_fax}")
+        if contact_parts:
+            lines.append(" / ".join(contact_parts))
+
+        if not lines:
+            return
+
+        cell = ws.cell(6, 2)
+        cell.value = "\n".join(lines)
+        alignment = copy(cell.alignment)
+        alignment.wrap_text = True
+        cell.alignment = alignment
+        current_height = ws.row_dimensions[6].height or 15.0
+        ws.row_dimensions[6].height = max(current_height, 30.0 if len(lines) > 1 else 20.0)
+
+    def _apply_recipient_to_haegwang(self, ws, metadata: QuoteSourceMetadata) -> None:
+        if not metadata.has_values():
+            return
+
+        if metadata.recipient_name:
+            ws.cell(2, 6).value = metadata.recipient_name
+
+        ws.cell(5, 6).value = metadata.recipient_phone or ""
+        ws.cell(6, 6).value = metadata.recipient_fax or ""
+
+    def _fill_geoseong_sheet(
+        self,
+        ws,
+        source_ws,
+        source_metadata: QuoteSourceMetadata,
+        item_count: int,
+        rate: float,
+        vat_rate: float,
+    ) -> None:
         spec = CompareSheetSpec(
             sheet_name=ws.title,
             item_start_row=11,
@@ -156,16 +214,16 @@ class QuoteGenerator:
         extra_rows = max(0, item_count - spec.template_capacity)
         if extra_rows:
             ws.insert_rows(spec.template_total_row, extra_rows)
-            for row in range(spec.template_total_row, spec.template_total_row + extra_rows):
-                copy_row_style(ws, spec.style_row, row, spec.max_col)
-                apply_row_merges(ws, row, [(2, 5), (9, 10), (11, 12)])
+            for row_idx in range(spec.template_total_row, spec.template_total_row + extra_rows):
+                copy_row_style(ws, spec.style_row, row_idx, spec.max_col)
+                apply_row_merges(ws, row_idx, [(2, 5), (9, 10), (11, 12)])
 
         total_row = spec.template_total_row + extra_rows
         last_item_row = spec.item_start_row + item_count - 1
         supply_total = 0.0
 
-        for row in range(spec.item_start_row, last_item_row + 1):
-            source_row = row - spec.item_start_row + 2
+        for row_idx in range(spec.item_start_row, last_item_row + 1):
+            source_row = row_idx - spec.item_start_row + 2
             source_name = source_ws.cell(source_row, 1).value
             source_qty = source_ws.cell(source_row, 2).value
             source_price = source_ws.cell(source_row, 3).value
@@ -176,19 +234,19 @@ class QuoteGenerator:
             supply_amount = adjusted_price * qty_num if adjusted_price is not None and qty_num is not None else None
             vat_amount = supply_amount * vat_rate if supply_amount is not None else None
 
-            ws.cell(row, 1).value = row - spec.item_start_row + 1
-            ws.cell(row, 2).value = source_name
-            ws.cell(row, 6).value = source_qty
-            ws.cell(row, 8).value = adjusted_price
-            ws.cell(row, 9).value = supply_amount
-            ws.cell(row, 11).value = vat_amount
-            ws.cell(row, 13).value = None
+            ws.cell(row_idx, 1).value = row_idx - spec.item_start_row + 1
+            ws.cell(row_idx, 2).value = source_name
+            ws.cell(row_idx, 6).value = source_qty
+            ws.cell(row_idx, 8).value = adjusted_price
+            ws.cell(row_idx, 9).value = supply_amount
+            ws.cell(row_idx, 11).value = vat_amount
+            ws.cell(row_idx, 13).value = None
 
             if supply_amount is not None:
                 supply_total += supply_amount
 
-        for row in range(last_item_row + 1, total_row):
-            clear_row_values(ws, row, [1, 2, 6, 8, 9, 11, 13])
+        for row_idx in range(last_item_row + 1, total_row):
+            clear_row_values(ws, row_idx, [1, 2, 6, 8, 9, 11, 13])
 
         ws.cell(total_row, 1).value = "TOTAL"
         ws.cell(total_row, 9).value = supply_total
@@ -196,8 +254,17 @@ class QuoteGenerator:
         ws.cell(9, 10).value = ws.cell(total_row, 9).value + ws.cell(total_row, 11).value
         ws.cell(4, 2).value = date.today()
         ws.cell(9, 6).value = ws.cell(9, 10).value
+        self._apply_recipient_to_geoseong(ws, source_metadata)
 
-    def _fill_haegwang_sheet(self, ws, source_ws, item_count: int, rate: float, vat_rate: float) -> None:
+    def _fill_haegwang_sheet(
+        self,
+        ws,
+        source_ws,
+        source_metadata: QuoteSourceMetadata,
+        item_count: int,
+        rate: float,
+        vat_rate: float,
+    ) -> None:
         spec = CompareSheetSpec(
             sheet_name=ws.title,
             item_start_row=15,
@@ -209,16 +276,16 @@ class QuoteGenerator:
         extra_rows = max(0, item_count - spec.template_capacity)
         if extra_rows:
             ws.insert_rows(spec.template_total_row, extra_rows)
-            for row in range(spec.template_total_row, spec.template_total_row + extra_rows):
-                copy_row_style(ws, spec.style_row, row, spec.max_col)
-                apply_row_merges(ws, row, [(4, 15), (16, 17), (19, 21), (22, 25), (26, 28), (29, 32)])
+            for row_idx in range(spec.template_total_row, spec.template_total_row + extra_rows):
+                copy_row_style(ws, spec.style_row, row_idx, spec.max_col)
+                apply_row_merges(ws, row_idx, [(4, 15), (16, 17), (19, 21), (22, 25), (26, 28), (29, 32)])
 
         total_row = spec.template_total_row + extra_rows
         last_item_row = spec.item_start_row + item_count - 1
         supply_total = 0.0
 
-        for row in range(spec.item_start_row, last_item_row + 1):
-            source_row = row - spec.item_start_row + 2
+        for row_idx in range(spec.item_start_row, last_item_row + 1):
+            source_row = row_idx - spec.item_start_row + 2
             source_name = source_ws.cell(source_row, 1).value
             source_qty = source_ws.cell(source_row, 2).value
             source_price = source_ws.cell(source_row, 3).value
@@ -229,19 +296,19 @@ class QuoteGenerator:
             supply_amount = adjusted_price * qty_num if adjusted_price is not None and qty_num is not None else None
             vat_amount = supply_amount * vat_rate if supply_amount is not None else None
 
-            ws.cell(row, 3).value = row - spec.item_start_row + 1
-            ws.cell(row, 4).value = source_name
-            ws.cell(row, 18).value = source_qty
-            ws.cell(row, 19).value = adjusted_price
-            ws.cell(row, 22).value = supply_amount
-            ws.cell(row, 26).value = vat_amount
-            ws.cell(row, 29).value = None
+            ws.cell(row_idx, 3).value = row_idx - spec.item_start_row + 1
+            ws.cell(row_idx, 4).value = source_name
+            ws.cell(row_idx, 18).value = source_qty
+            ws.cell(row_idx, 19).value = adjusted_price
+            ws.cell(row_idx, 22).value = supply_amount
+            ws.cell(row_idx, 26).value = vat_amount
+            ws.cell(row_idx, 29).value = None
 
             if supply_amount is not None:
                 supply_total += supply_amount
 
-        for row in range(last_item_row + 1, total_row):
-            clear_row_values(ws, row, [3, 4, 18, 19, 22, 26, 29])
+        for row_idx in range(last_item_row + 1, total_row):
+            clear_row_values(ws, row_idx, [3, 4, 18, 19, 22, 26, 29])
 
         ws.cell(total_row, 3).value = "TOTAL"
         ws.cell(total_row, 5).value = supply_total
@@ -250,3 +317,4 @@ class QuoteGenerator:
         ws.cell(total_row, 19).value = "SUM(Total)"
         ws.cell(total_row, 25).value = ws.cell(total_row, 5).value + ws.cell(total_row, 14).value
         ws.cell(8, 6).value = date.today()
+        self._apply_recipient_to_haegwang(ws, source_metadata)

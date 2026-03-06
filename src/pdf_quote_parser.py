@@ -7,6 +7,8 @@ import re
 from openpyxl import Workbook
 from pypdf import PdfReader
 
+from .quote_source_metadata import QuoteSourceMetadata, write_metadata_sheet
+
 
 class PdfQuoteParseError(Exception):
     pass
@@ -38,6 +40,7 @@ ITEM_LINE_NO_INDEX_RE = re.compile(
 )
 
 TOTAL_SUPPLY_RE = re.compile(r"공급가\s*([0-9][0-9,]*)")
+PHONE_RE = re.compile(r"\d{2,4}-\d{3,4}-\d{4}")
 
 
 def _to_number(value: str) -> float:
@@ -46,8 +49,7 @@ def _to_number(value: str) -> float:
 
 def _normalize_line(line: str) -> str:
     line = line.replace("\u00a0", " ")
-    line = re.sub(r"\s+", " ", line).strip()
-    return line
+    return re.sub(r"\s+", " ", line).strip()
 
 
 def _is_non_item_line(line: str) -> bool:
@@ -64,7 +66,48 @@ def _is_non_item_line(line: str) -> bool:
         "단가",
         "공급가액",
     )
-    return any(k in line for k in blocked_keywords) or lowered.startswith("tel") or lowered.startswith("fax")
+    return any(keyword in line for keyword in blocked_keywords) or lowered.startswith("tel") or lowered.startswith("fax")
+
+
+def extract_metadata_from_pdf(pdf_path: Path) -> QuoteSourceMetadata:
+    reader = PdfReader(str(pdf_path))
+    text = "\n".join((page.extract_text() or "") for page in reader.pages)
+    lines = [_normalize_line(line) for line in text.splitlines()]
+    lines = [line for line in lines if line]
+
+    metadata = QuoteSourceMetadata()
+
+    recipient_match = re.search(r"수\s*신(?:\s*[-:]\s*|\s+)(.+)", text)
+    if recipient_match:
+        metadata.recipient_name = _normalize_line(recipient_match.group(1)).rstrip("?")
+
+    tel_fax_match = re.search(
+        r"TEL\s*/\s*FAX\s*[:：]?\s*(\d{2,4}-\d{3,4}-\d{4})\s*/\s*(\d{2,4}-\d{3,4}-\d{4})",
+        text,
+        re.IGNORECASE,
+    )
+    if tel_fax_match:
+        metadata.recipient_phone = tel_fax_match.group(1)
+        metadata.recipient_fax = tel_fax_match.group(2)
+
+    if metadata.recipient_name is None:
+        for line in lines:
+            match = re.search(r"수\s*신(?:\s*[-:]\s*|\s+)(.+)", line)
+            if match:
+                metadata.recipient_name = _normalize_line(match.group(1)).rstrip("?")
+                break
+
+    if metadata.recipient_phone is None or metadata.recipient_fax is None:
+        for line in lines:
+            upper_line = line.upper()
+            if "TEL/FAX" in upper_line:
+                phones = PHONE_RE.findall(line)
+                if len(phones) >= 2:
+                    metadata.recipient_phone = metadata.recipient_phone or phones[0]
+                    metadata.recipient_fax = metadata.recipient_fax or phones[1]
+                    break
+
+    return metadata
 
 
 def extract_items_from_pdf(pdf_path: Path) -> list[QuoteItem]:
@@ -117,6 +160,7 @@ def extract_items_from_pdf(pdf_path: Path) -> list[QuoteItem]:
 
 def convert_pdf_to_source_workbook(pdf_path: Path, output_xlsx_path: Path) -> Path:
     items = extract_items_from_pdf(pdf_path)
+    metadata = extract_metadata_from_pdf(pdf_path)
 
     wb = Workbook()
     ws = wb.active
@@ -125,11 +169,12 @@ def convert_pdf_to_source_workbook(pdf_path: Path, output_xlsx_path: Path) -> Pa
     ws.cell(1, 2).value = "수량"
     ws.cell(1, 3).value = "단가"
 
-    for i, item in enumerate(items, start=2):
-        ws.cell(i, 1).value = item.name
-        ws.cell(i, 2).value = item.qty
-        ws.cell(i, 3).value = item.unit_price
+    for row_idx, item in enumerate(items, start=2):
+        ws.cell(row_idx, 1).value = item.name
+        ws.cell(row_idx, 2).value = item.qty
+        ws.cell(row_idx, 3).value = item.unit_price
 
+    write_metadata_sheet(wb, metadata)
     output_xlsx_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(output_xlsx_path)
     return output_xlsx_path
