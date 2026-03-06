@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>비교견적 자동 생성기</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="wrap">
+    <h1>비교견적 자동 생성기</h1>
+    <p class="desc">본견적 엑셀 파일 1개만 업로드하면 비교견적 파일을 자동으로 만듭니다.</p>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="flash-box">
+          {% for message in messages %}
+            <div class="flash-item">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <form method="post" action="{{ url_for('generate') }}" enctype="multipart/form-data" class="card">
+      <label>본견적 엑셀 파일</label>
+      <input type="file" name="quote_file" accept=".xlsx,.xlsm" required>
+
+      <div class="grid two">
+        <div>
+          <label>업체1 이름</label>
+          <input type="text" name="company1" value="거성">
+        </div>
+        <div>
+          <label>업체1 가산율 / 할인율(%)</label>
+          <input type="number" step="0.1" name="rate1" value="15">
+        </div>
+      </div>
+
+      <div class="grid two">
+        <div>
+          <label>업체2 이름</label>
+          <input type="text" name="company2" value="해광">
+        </div>
+        <div>
+          <label>업체2 가산율 / 할인율(%)</label>
+          <input type="number" step="0.1" name="rate2" value="20">
+        </div>
+      </div>
+
+      <div>
+        <label>부가세율(%)</label>
+        <input type="number" step="0.1" name="vat_rate" value="10">
+      </div>
+
+      <button type="submit">비교견적 생성</button>
+    </form>
+
+    <div class="help">
+      <h2>입력 규칙</h2>
+      <ul>
+        <li>첫 번째 시트가 본견적이어야 합니다.</li>
+        <li>형식은 같고 품목 수만 달라져야 합니다.</li>
+        <li>A열 품목명, B열 수량, C열 가격을 기준으로 읽습니다.</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>
