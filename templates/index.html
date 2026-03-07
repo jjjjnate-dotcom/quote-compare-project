@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8">
@@ -14,7 +14,7 @@
     <header class="hero">
       <p class="hero-kicker">Quote Compare Tool</p>
       <h1>비교견적 자동 생성기</h1>
-      <p class="desc">본견적 엑셀 파일을 업로드하면 비교견적 파일을 자동으로 생성합니다.</p>
+      <p class="desc">본견적 파일 1개로 비교견적서를 만들고, 필요하면 업체3 시트도 선택해서 추가할 수 있습니다.</p>
     </header>
 
     {% with messages = get_flashed_messages() %}
@@ -34,7 +34,7 @@
       </div>
 
       <label class="field-label" for="quote_file">본견적 파일</label>
-      <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-controls="quote_file" aria-label="엑셀 파일 드래그 앤 드롭 영역">
+      <div id="dropzone" class="dropzone" role="button" tabindex="0" aria-controls="quote_file" aria-label="견적 파일 드래그 앤 드롭 영역">
         <input id="quote_file" type="file" name="quote_file" accept=".xlsx,.xlsm,.pdf" required>
         <div class="drop-inner">
           <p class="drop-title">파일을 여기에 끌어다 놓거나 클릭해서 선택</p>
@@ -70,6 +70,80 @@
         <input id="vat_rate" type="number" step="0.1" name="vat_rate" value="10">
       </div>
 
+      <section class="option-toggle">
+        <label class="checkbox-row" for="include_company3">
+          <input id="include_company3" type="checkbox" name="include_company3" value="1">
+          <span>업체3 비교견적 포함</span>
+        </label>
+        <p class="field-hint">기본값은 제외입니다. 체크하면 업체3 시트를 추가하고 공급자 정보를 함께 입력합니다.</p>
+      </section>
+
+      <section id="company3-panel" class="optional-card" hidden>
+        <div class="section-head compact">
+          <h2>업체3 설정</h2>
+          <p>공급자 정보는 이 브라우저에 저장해 두고 다시 불러올 수 있습니다.</p>
+        </div>
+
+        <div class="profile-toolbar">
+          <div class="profile-picker">
+            <label class="field-label" for="saved_supplier_profile">저장된 공급자 정보</label>
+            <select id="saved_supplier_profile">
+              <option value="">저장된 공급자 정보 선택</option>
+            </select>
+          </div>
+          <div class="profile-actions">
+            <button id="load-supplier-btn" type="button" class="secondary-btn">불러오기</button>
+            <button id="save-supplier-btn" type="button" class="secondary-btn">현재 정보 저장</button>
+          </div>
+        </div>
+
+        <div class="grid two">
+          <div>
+            <label class="field-label" for="company3_name">업체3 시트명</label>
+            <input id="company3_name" type="text" name="company3_name" value="업체3" autocomplete="off">
+          </div>
+          <div>
+            <label class="field-label" for="rate3">업체3 가산율 / 할인율(%)</label>
+            <input id="rate3" type="number" step="0.1" name="rate3" value="0">
+          </div>
+        </div>
+
+        <div class="grid two">
+          <div>
+            <label class="field-label" for="supplier_trade_name">상호</label>
+            <input id="supplier_trade_name" type="text" name="supplier_trade_name" data-company3-required="true" autocomplete="organization">
+          </div>
+          <div>
+            <label class="field-label" for="supplier_representative">대표</label>
+            <input id="supplier_representative" type="text" name="supplier_representative" data-company3-required="true" autocomplete="name">
+          </div>
+        </div>
+
+        <div class="grid two">
+          <div>
+            <label class="field-label" for="supplier_business_number">사업자번호</label>
+            <input id="supplier_business_number" type="text" name="supplier_business_number" data-company3-required="true" inputmode="numeric" autocomplete="off">
+          </div>
+          <div>
+            <label class="field-label" for="supplier_tel">TEL</label>
+            <input id="supplier_tel" type="text" name="supplier_tel" data-company3-required="true" inputmode="tel" autocomplete="tel">
+          </div>
+        </div>
+
+        <div class="grid two">
+          <div>
+            <label class="field-label" for="supplier_fax">FAX</label>
+            <input id="supplier_fax" type="text" name="supplier_fax" data-company3-required="true" inputmode="tel" autocomplete="off">
+          </div>
+          <div></div>
+        </div>
+
+        <div>
+          <label class="field-label" for="supplier_address">주소</label>
+          <textarea id="supplier_address" name="supplier_address" rows="3" data-company3-required="true"></textarea>
+        </div>
+      </section>
+
       <button id="generate-btn" type="submit" class="generate-btn">
         <span class="btn-label">비교견적 생성</span>
         <span class="btn-loading" hidden>
@@ -86,13 +160,17 @@
         <li>첫 번째 시트가 본견적 시트여야 합니다.</li>
         <li>형식은 같고 항목 수만 달라야 합니다.</li>
         <li>A열 품목명, B열 수량, C열 가격을 기준으로 계산합니다.</li>
-        <li>PDF는 텍스트 추출 가능한 문서여야 하며 품목/수량/단가 표가 필요합니다.</li>
+        <li>업체3을 선택하면 상호, 대표, 사업자번호, 주소, TEL, FAX를 모두 입력해야 합니다.</li>
+        <li>저장된 공급자 정보는 현재 브라우저에 보관됩니다.</li>
       </ul>
     </section>
   </main>
 
   <script>
     (function () {
+      const PROFILE_STORAGE_KEY = 'quote_compare.vendor3_profiles.v1';
+      const LAST_PROFILE_KEY = 'quote_compare.vendor3_last_profile.v1';
+
       const form = document.getElementById('generate-form');
       const fileInput = document.getElementById('quote_file');
       const dropzone = document.getElementById('dropzone');
@@ -101,6 +179,24 @@
       const btnLabel = submitBtn.querySelector('.btn-label');
       const btnLoading = submitBtn.querySelector('.btn-loading');
       const submitStatus = document.getElementById('submit-status');
+
+      const includeCompany3 = document.getElementById('include_company3');
+      const company3Panel = document.getElementById('company3-panel');
+      const company3NameInput = document.getElementById('company3_name');
+      const rate3Input = document.getElementById('rate3');
+      const savedSupplierProfile = document.getElementById('saved_supplier_profile');
+      const loadSupplierBtn = document.getElementById('load-supplier-btn');
+      const saveSupplierBtn = document.getElementById('save-supplier-btn');
+      const company3RequiredFields = Array.from(document.querySelectorAll('[data-company3-required="true"]'));
+
+      const supplierFields = {
+        trade_name: document.getElementById('supplier_trade_name'),
+        representative: document.getElementById('supplier_representative'),
+        business_number: document.getElementById('supplier_business_number'),
+        address: document.getElementById('supplier_address'),
+        tel: document.getElementById('supplier_tel'),
+        fax: document.getElementById('supplier_fax'),
+      };
 
       function setSubmitting(isSubmitting) {
         submitBtn.disabled = isSubmitting;
@@ -129,7 +225,7 @@
             return decodeURIComponent(utf8Match[1]);
           } catch (_) {}
         }
-        const plainMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+        const plainMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
         return plainMatch && plainMatch[1] ? plainMatch[1] : null;
       }
 
@@ -155,6 +251,173 @@
         updateSelectedFile();
       }
 
+      function toggleCompany3Panel() {
+        const enabled = includeCompany3.checked;
+        company3Panel.hidden = !enabled;
+        company3RequiredFields.forEach((field) => {
+          field.required = enabled;
+        });
+      }
+
+      function readProfiles() {
+        try {
+          const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
+          const parsed = raw ? JSON.parse(raw) : [];
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (_) {
+          return [];
+        }
+      }
+
+      function writeProfiles(profiles) {
+        localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profiles.slice(0, 20)));
+      }
+
+      function makeProfileKey(profile) {
+        return [profile.trade_name, profile.business_number].join('||');
+      }
+
+      function makeProfileLabel(profile) {
+        return profile.trade_name + ' / ' + profile.business_number;
+      }
+
+      function getCurrentSupplierProfile() {
+        return {
+          trade_name: supplierFields.trade_name.value.trim(),
+          representative: supplierFields.representative.value.trim(),
+          business_number: supplierFields.business_number.value.trim(),
+          address: supplierFields.address.value.trim(),
+          tel: supplierFields.tel.value.trim(),
+          fax: supplierFields.fax.value.trim(),
+        };
+      }
+
+      function fillSupplierProfile(profile) {
+        supplierFields.trade_name.value = profile.trade_name || '';
+        supplierFields.representative.value = profile.representative || '';
+        supplierFields.business_number.value = profile.business_number || '';
+        supplierFields.address.value = profile.address || '';
+        supplierFields.tel.value = profile.tel || '';
+        supplierFields.fax.value = profile.fax || '';
+      }
+
+      function validateCompany3Fields() {
+        if (!includeCompany3.checked) return null;
+        if (!company3NameInput.value.trim()) return '업체3 시트명을 입력해 주세요.';
+        if (!rate3Input.value.trim()) return '업체3 가산율/할인율을 입력해 주세요.';
+
+        const labels = {
+          trade_name: '업체3 상호',
+          representative: '업체3 대표',
+          business_number: '업체3 사업자번호',
+          address: '업체3 주소',
+          tel: '업체3 TEL',
+          fax: '업체3 FAX',
+        };
+        const profile = getCurrentSupplierProfile();
+
+        for (const key of Object.keys(labels)) {
+          if (!profile[key]) {
+            return labels[key] + '을 입력해 주세요.';
+          }
+        }
+
+        return null;
+      }
+
+      function refreshProfileOptions(selectedKey) {
+        const profiles = readProfiles();
+        const currentKey = selectedKey || savedSupplierProfile.value || localStorage.getItem(LAST_PROFILE_KEY) || '';
+
+        savedSupplierProfile.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = profiles.length > 0 ? '저장된 공급자 정보 선택' : '저장된 공급자 정보 없음';
+        savedSupplierProfile.appendChild(placeholder);
+
+        profiles.forEach((profile) => {
+          const option = document.createElement('option');
+          option.value = makeProfileKey(profile);
+          option.textContent = makeProfileLabel(profile);
+          savedSupplierProfile.appendChild(option);
+        });
+
+        savedSupplierProfile.value = currentKey;
+        loadSupplierBtn.disabled = profiles.length === 0;
+      }
+
+      function saveCurrentProfile(silent) {
+        const profile = getCurrentSupplierProfile();
+        const labelsError = validateCompany3Fields();
+        if (labelsError) {
+          if (!silent) setStatus(labelsError, 'error');
+          return false;
+        }
+
+        const key = makeProfileKey(profile);
+        const profiles = readProfiles().filter((item) => makeProfileKey(item) !== key);
+        profiles.unshift({
+          trade_name: profile.trade_name,
+          representative: profile.representative,
+          business_number: profile.business_number,
+          address: profile.address,
+          tel: profile.tel,
+          fax: profile.fax,
+          saved_at: new Date().toISOString(),
+        });
+        writeProfiles(profiles);
+        localStorage.setItem(LAST_PROFILE_KEY, key);
+        refreshProfileOptions(key);
+
+        if (!silent) {
+          setStatus('업체3 공급자 정보를 저장했습니다.', 'success');
+        }
+        return true;
+      }
+
+      function loadSelectedProfile() {
+        const targetKey = savedSupplierProfile.value;
+        if (!targetKey) {
+          setStatus('불러올 공급자 정보를 선택해 주세요.', 'error');
+          return;
+        }
+
+        const profile = readProfiles().find((item) => makeProfileKey(item) === targetKey);
+        if (!profile) {
+          setStatus('저장된 공급자 정보를 찾지 못했습니다.', 'error');
+          return;
+        }
+
+        fillSupplierProfile(profile);
+        localStorage.setItem(LAST_PROFILE_KEY, targetKey);
+        setStatus('저장된 공급자 정보를 불러왔습니다.', 'success');
+      }
+
+      function restoreLastProfile() {
+        refreshProfileOptions();
+        const targetKey = localStorage.getItem(LAST_PROFILE_KEY);
+        if (!targetKey) return;
+
+        const profile = readProfiles().find((item) => makeProfileKey(item) === targetKey);
+        if (!profile) return;
+
+        savedSupplierProfile.value = targetKey;
+        fillSupplierProfile(profile);
+      }
+
+      function extractHtmlErrorMessage(html) {
+        try {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, 'text/html');
+          const messages = Array.from(doc.querySelectorAll('.flash-item'))
+            .map((node) => node.textContent.trim())
+            .filter(Boolean);
+          return messages.join(' ');
+        } catch (_) {
+          return '';
+        }
+      }
+
       ['dragenter', 'dragover'].forEach((eventName) => {
         dropzone.addEventListener(eventName, (event) => {
           event.preventDefault();
@@ -173,7 +436,6 @@
       });
 
       dropzone.addEventListener('drop', onDrop);
-
       dropzone.addEventListener('click', () => fileInput.click());
       dropzone.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -183,6 +445,13 @@
       });
 
       fileInput.addEventListener('change', updateSelectedFile);
+      includeCompany3.addEventListener('change', toggleCompany3Panel);
+      saveSupplierBtn.addEventListener('click', () => {
+        includeCompany3.checked = true;
+        toggleCompany3Panel();
+        saveCurrentProfile(false);
+      });
+      loadSupplierBtn.addEventListener('click', loadSelectedProfile);
 
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -192,6 +461,14 @@
           selectedFile.classList.remove('has-file');
           fileInput.focus();
           setStatus('파일을 먼저 선택해 주세요.', 'error');
+          return;
+        }
+
+        const company3Error = validateCompany3Fields();
+        if (company3Error) {
+          includeCompany3.checked = true;
+          toggleCompany3Panel();
+          setStatus(company3Error, 'error');
           return;
         }
 
@@ -207,11 +484,17 @@
             redirect: 'follow',
           });
 
+          const contentType = response.headers.get('Content-Type') || '';
+          if (contentType.includes('text/html')) {
+            const html = await response.text();
+            const serverMessage = extractHtmlErrorMessage(html) || '생성 실패. 입력값과 서버 상태를 확인해 주세요.';
+            throw new Error(serverMessage);
+          }
+
           if (!response.ok) {
             throw new Error('서버 응답 오류');
           }
 
-          const contentType = response.headers.get('Content-Type') || '';
           const isExcel = contentType.includes('spreadsheetml');
           const isBinary = contentType.includes('octet-stream');
           if (!isExcel && !isBinary) {
@@ -231,14 +514,20 @@
           link.remove();
           window.URL.revokeObjectURL(url);
 
+          if (includeCompany3.checked) {
+            saveCurrentProfile(true);
+          }
           setStatus('생성 완료. 파일 다운로드를 시작했습니다.', 'success');
         } catch (error) {
-          setStatus('생성 실패. 입력 엑셀 형식 또는 서버 상태를 확인해 주세요.', 'error');
+          const message = error && error.message ? error.message : '생성 실패. 입력 엑셀 형식 또는 서버 상태를 확인해 주세요.';
+          setStatus(message, 'error');
         } finally {
           setSubmitting(false);
         }
       });
 
+      toggleCompany3Panel();
+      restoreLastProfile();
       setSubmitting(false);
     })();
   </script>

@@ -179,7 +179,9 @@ h1 {
 }
 
 input[type="text"],
-input[type="number"] {
+input[type="number"],
+select,
+textarea {
   width: 100%;
   border: 1px solid #c8d5e8;
   border-radius: 12px;
@@ -191,16 +193,106 @@ input[type="number"] {
 
 input[type="text"]:focus,
 input[type="number"]:focus,
+select:focus,
+textarea:focus,
 .dropzone:focus-within {
   outline: none;
   border-color: var(--accent-2);
   box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.14);
 }
 
+textarea {
+  resize: vertical;
+  min-height: 88px;
+}
+
 .grid.two {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
+}
+
+.option-toggle {
+  margin: 4px 0 18px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid #d7e3f4;
+  background: linear-gradient(135deg, #f8fbff 0%, #eef5ff 100%);
+}
+
+.checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.field-hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.optional-card {
+  margin-bottom: 18px;
+  padding: 18px;
+  border: 1px solid #d7e3f4;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f4f8ff 100%);
+}
+
+.section-head.compact {
+  margin-bottom: 10px;
+}
+
+.profile-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.profile-picker {
+  min-width: 0;
+}
+
+.profile-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.secondary-btn {
+  border: 1px solid #b9c9e0;
+  border-radius: 12px;
+  padding: 11px 14px;
+  background: #fff;
+  color: #244165;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+}
+
+.secondary-btn:hover {
+  border-color: #87a7d8;
+  background: #f7fbff;
+  transform: translateY(-1px);
+}
+
+.secondary-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  transform: none;
 }
 
 .generate-btn {
@@ -296,5 +388,9 @@ input[type="number"]:focus,
   .grid.two {
     grid-template-columns: 1fr;
     gap: 0;
+  }
+
+  .profile-toolbar {
+    grid-template-columns: 1fr;
   }
 }
