@@ -41,6 +41,7 @@ ITEM_LINE_NO_INDEX_RE = re.compile(
 
 TOTAL_SUPPLY_RE = re.compile(r"공급가\s*([0-9][0-9,]*)")
 PHONE_RE = re.compile(r"\d{2,4}-\d{3,4}-\d{4}")
+TRAILING_QTY_RE = re.compile(r"^(?P<name>.+?)(?P<qty>\d+(?:\.\d+)?)$")
 
 
 def _to_number(value: str) -> float:
@@ -67,6 +68,52 @@ def _is_non_item_line(line: str) -> bool:
         "공급가액",
     )
     return any(keyword in line for keyword in blocked_keywords) or lowered.startswith("tel") or lowered.startswith("fax")
+
+
+def _parse_item_line(line: str) -> QuoteItem | None:
+    stripped = line.strip()
+    if not stripped or _is_non_item_line(stripped):
+        return None
+
+    match = ITEM_LINE_WITH_INDEX_RE.match(stripped) or ITEM_LINE_NO_INDEX_RE.match(stripped)
+    if match:
+        name = match.group("name").strip()
+        qty = _to_number(match.group("qty"))
+        unit = _to_number(match.group("unit"))
+        supply = _to_number(match.group("supply"))
+        if name and qty > 0 and unit > 0 and supply > 0 and abs((qty * unit) - supply) <= 1:
+            return QuoteItem(name=name, qty=qty, unit_price=unit)
+
+    no_index = re.sub(r"^\s*\d+\s+", "", stripped)
+    tail_match = re.search(
+        r"(?P<unit>\d[\d,]*(?:\.\d+)?)\s+"
+        r"(?P<supply>\d[\d,]*(?:\.\d+)?)\s+"
+        r"(?P<vat>\d[\d,]*(?:\.\d+)?)\s*$",
+        no_index,
+    )
+    if not tail_match:
+        return None
+
+    prefix = no_index[: tail_match.start()].strip()
+    if not prefix:
+        return None
+
+    qty_match = TRAILING_QTY_RE.match(prefix)
+    if not qty_match:
+        return None
+
+    name = qty_match.group("name").strip()
+    qty = _to_number(qty_match.group("qty"))
+    unit = _to_number(tail_match.group("unit"))
+    supply = _to_number(tail_match.group("supply"))
+
+    if not name or qty <= 0 or unit <= 0 or supply <= 0:
+        return None
+
+    if abs((qty * unit) - supply) > 1:
+        return None
+
+    return QuoteItem(name=name, qty=qty, unit_price=unit)
 
 
 def extract_metadata_from_pdf(pdf_path: Path) -> QuoteSourceMetadata:
@@ -121,21 +168,9 @@ def extract_items_from_pdf(pdf_path: Path) -> list[QuoteItem]:
 
     items: list[QuoteItem] = []
     for line in lines:
-        if _is_non_item_line(line):
-            continue
-
-        match = ITEM_LINE_WITH_INDEX_RE.match(line) or ITEM_LINE_NO_INDEX_RE.match(line)
-        if not match:
-            continue
-
-        name = match.group("name").strip()
-        qty = _to_number(match.group("qty"))
-        unit = _to_number(match.group("unit"))
-
-        if not name or qty <= 0 or unit <= 0:
-            continue
-
-        items.append(QuoteItem(name=name, qty=qty, unit_price=unit))
+        item = _parse_item_line(line)
+        if item is not None:
+            items.append(item)
 
     if not items:
         raise PdfQuoteParseError(
